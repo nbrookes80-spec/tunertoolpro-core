@@ -342,6 +342,16 @@ class MonitorTests(unittest.TestCase):
             command = text.strip()
             self.assertTrue(command == '' or is_allowed(command), command)
 
+    def test_monitoring_starts_again_after_the_adapter_drops_out(self):
+        m = self.make([b'1EB 01 82\r1ED C1 90\rBUFFER FULL\r\r>', b'1EB 01 7D\r'])
+        m.start('6', '7E8')
+        self.t.sent.clear()
+        self.assertEqual(len(m.poll()), 2)
+        self.assertEqual(self.sent(), ['ATMA\r'])        # the prompt means it left monitor mode: listen again
+        self.assertEqual((m.restarts, m.overruns), (1, 1))
+        self.assertEqual(len(m.poll()), 1)
+        self.assertEqual(self.sent(), ['ATMA\r'])        # no second restart while it is still listening
+
 
 class SourceTests(unittest.TestCase):
     def test_demo_bus_rates(self):
