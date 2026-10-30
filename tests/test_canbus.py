@@ -320,6 +320,41 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(len(frames), 1)
         self.assertEqual(m.overruns, 1)
 
+    def test_monitoring_starts_again_after_the_adapter_drops_out(self):
+        """A busy bus fills the adapter's buffer and it leaves monitor mode with a prompt: ATMA is sent again."""
+        m = self.make([b'7E8 01 02\rBUFFER FULL\r\r>', b'7E8 03 04\r'])
+        m.start()
+        self.t.sent.clear()
+        first = m.poll()
+        self.assertEqual(len(first), 1)
+        self.assertEqual(self.sent(), ['ATMA\r'])
+        self.assertEqual(m.restarts, 1)
+        self.assertTrue(m.running)
+        second = m.poll()
+        self.assertEqual([f.data.hex() for f in second], ['0304'])
+        self.assertEqual(self.sent(), ['ATMA\r'])           # nothing more was needed
+        self.assertEqual(m.restarts, 1)
+
+    def test_a_stopped_adapter_is_started_again_but_a_stopped_monitor_is_left_alone(self):
+        m = self.make([b'7E8 01\rSTOPPED\r'])
+        m.start()
+        self.t.sent.clear()
+        m.poll()
+        self.assertEqual(self.sent(), ['ATMA\r'])
+        m.stop()
+        self.t.sent.clear()
+        self.t.chunks = [b'BUFFER FULL\r>']
+        self.assertEqual(m.poll(), [])
+        self.assertEqual(self.t.sent, [])                      # not running: no ATMA after stop()
+
+    def test_restarting_sends_only_an_allowed_command(self):
+        m = self.make([b'BUFFER FULL\r>'])
+        m.start()
+        self.t.sent.clear()
+        m.poll()
+        for text in self.sent():
+            self.assertTrue(is_allowed(text.strip()), text)
+
     def test_poll_when_not_running_returns_nothing(self):
         m = self.make([b'7E8 01\r'])
         self.assertEqual(m.poll(), [])
