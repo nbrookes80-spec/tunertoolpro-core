@@ -86,6 +86,22 @@ MESSAGES = {
 }
 
 
+# The modules the README's definitions were captured from.
+SUPPORTED_ECM = 'E38'   # Powertrain Control Module
+SUPPORTED_TCM = 'T43'   # Transmission Control Module
+
+
+def _module_code(label):
+    """'E38', 'e38 (confirm)' -> 'E38'. Blank or None -> ''."""
+    text = (label or '').strip().upper()
+    return text.split()[0] if text else ''
+
+
+def supports(ecm_label, tcm_label):
+    """True when a car's ECM and TCM labels are the ones this table was written for."""
+    return _module_code(ecm_label) == SUPPORTED_ECM and _module_code(tcm_label) == SUPPORTED_TCM
+
+
 def lookup(can_id):
     """The GMLAN definition for an 11-bit ID, or None if the README does not describe it."""
     return MESSAGES.get(can_id)

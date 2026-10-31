@@ -53,5 +53,31 @@ class GmlanDescribeTests(unittest.TestCase):
         self.assertEqual(gmlan.describe(Frame(0x1F5, bytes(8), extended=True)), (None, None))
 
 
+class GmlanProfileLinkTests(unittest.TestCase):
+    def test_e38_t43_labels_are_supported(self):
+        self.assertTrue(gmlan.supports('E38', 'T43'))
+
+    def test_label_with_a_note_still_matches(self):
+        self.assertTrue(gmlan.supports('E38 (confirm)', ' t43 '))
+
+    def test_other_or_blank_labels_are_not_supported(self):
+        self.assertFalse(gmlan.supports('E38', 'T42'))
+        self.assertFalse(gmlan.supports('E67', 'T43'))
+        self.assertFalse(gmlan.supports('', ''))
+        self.assertFalse(gmlan.supports(None, None))
+
+    def test_profile_reports_support_from_its_labels(self):
+        from tunertoolpro.vehicle import VehicleProfile
+        self.assertTrue(VehicleProfile(ecm_label='E38', tcm_label='T43').gmlan_supported())
+        self.assertFalse(VehicleProfile().gmlan_supported())
+
+    def test_profile_labels_survive_a_round_trip(self):
+        from tunertoolpro.vehicle import VehicleProfile
+        original = VehicleProfile(car='Holden VE Commodore', ecm_label='E38', tcm_label='T43')
+        restored = VehicleProfile.from_dict(original.to_dict())
+        self.assertEqual((restored.ecm_label, restored.tcm_label), ('E38', 'T43'))
+        self.assertTrue(restored.gmlan_supported())
+
+
 if __name__ == '__main__':
     unittest.main()
