@@ -71,8 +71,17 @@ class VehicleProfile:
     # ECU limits (from the calibration file or the scan tool). None means not entered.
     ecu_max_torque_lbft: float = None
     redline_rpm: float = None
+    # Controller labels as printed on the modules (E38 PCM, T43 TCM). They decide whether the GM-LAN
+    # message table applies to this car. Leave blank if unknown.
+    ecm_label: str = ''
+    tcm_label: str = ''
     notes: str = ''
     sources: list = field(default_factory=list)
+
+    def gmlan_supported(self):
+        """True when the module labels match the GM-LAN definitions (E38 PCM and T43 TCM)."""
+        from .canbus import gmlan
+        return gmlan.supports(self.ecm_label, self.tcm_label)
 
     def to_dict(self):
         return asdict(self)
