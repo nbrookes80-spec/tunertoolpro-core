@@ -180,6 +180,21 @@ class BarTests(unittest.TestCase):
         self.assertEqual(shift_light.bar_insets('bottom', True, False, 270), (0, 0))
         self.assertEqual(shift_light.bar_insets('bottom', True, True, 270), (0, 0))
 
+    def test_a_wide_screen_keeps_the_bar_beside_the_buttons(self):
+        self.assertEqual(shift_light.bar_gaps('top', True, False, 800, 270, 44), (0, 270, 0))
+        self.assertEqual(shift_light.bar_gaps('top', True, True, 800, 270, 44), (270, 0, 0))
+
+    def test_a_narrow_screen_puts_the_bar_under_the_buttons_at_full_width(self):
+        # 360 - 270 leaves 90 dp, less than MIN_BAR_WIDTH, so the bar drops below the buttons instead
+        self.assertLess(360 - 270, shift_light.MIN_BAR_WIDTH)
+        self.assertEqual(shift_light.bar_gaps('top', True, False, 360, 270, 44), (0, 0, 44))
+        self.assertEqual(shift_light.bar_gaps('top', True, True, 360, 270, 44), (0, 0, 44))
+
+    def test_no_gaps_outside_full_screen_or_at_the_bottom(self):
+        for width in (360, 800):
+            self.assertEqual(shift_light.bar_gaps('top', False, False, width, 270, 44), (0, 0, 0))
+            self.assertEqual(shift_light.bar_gaps('bottom', True, True, width, 270, 44), (0, 0, 0))
+
 
 # Every screen of the Android app. 'scan' polls the adapter itself; the others leave it to the Live reader.
 SCREENS = ('shift', 'dyno', 'live', 'scan', 'link', 'sniff', 'agent', 'settings')

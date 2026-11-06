@@ -52,6 +52,7 @@ POSITIONS = ('top', 'bottom')
 SIZES = ('small', 'medium', 'large')
 SIZE_NAMES = {'small': 'Small', 'medium': 'Medium', 'large': 'Large'}
 BAR_HEIGHTS = {'small': 22, 'medium': 32, 'large': 46}
+MIN_BAR_WIDTH = 160        # dp: narrower than this beside the full-screen buttons, the bar goes under them
 
 # The screens of the Android app. Only Scan polls the adapter itself; every other one leaves it to the Live reader.
 SCREENS = ('shift', 'dyno', 'live', 'scan', 'link', 'sniff', 'agent', 'settings')
@@ -110,6 +111,21 @@ def bar_insets(position, fullscreen, mirrored, reserved):
     if position != 'top' or not fullscreen:
         return 0, 0
     return (reserved, 0) if mirrored else (0, reserved)
+
+
+def bar_gaps(position, fullscreen, mirrored, width, reserved, below):
+    """(left, right, top) space in dp around the bar, so it never covers the full-screen buttons.
+
+    `width` is the screen width, `reserved` the width the buttons take at the top right and `below` their height.
+    Beside the buttons when that leaves the bar at least MIN_BAR_WIDTH (see bar_insets); on a narrow screen the bar
+    keeps its full width and sits under the buttons instead.
+    """
+    left, right = bar_insets(position, fullscreen, mirrored, reserved)
+    if left == right == 0:
+        return 0, 0, 0
+    if width - reserved >= MIN_BAR_WIDTH:
+        return left, right, 0
+    return 0, 0, below
 
 
 def rpm_source(screen, holds_adapter, light_on, scan_reads_rpm=False):
