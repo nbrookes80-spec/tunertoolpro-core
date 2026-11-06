@@ -24,7 +24,11 @@ class CatalogTests(unittest.TestCase):
     def test_decoding_matches_the_standard_formulas(self):
         self.assertEqual(pids.get('010C').parse('1AF8'), 1726.0)        # (A*256+B)/4
         self.assertEqual(pids.get('0105').parse('78'), 80.0)             # A-40
-        self.assertAlmostEqual(pids.get('010B').parse('FF'), 300.0)      # scaled for the 3 bar sensor
+        # Proflow PFEFI-MAP2 2.7 bar: MAP = (A / 255) * 312.50 - 11.25, never below 0
+        self.assertAlmostEqual(pids.get('010B').parse('FF'), 301.25)     # 5 V
+        self.assertAlmostEqual(pids.get('010B').parse('E5'), 269.4, places=1)   # A=229 is just under 4.5 V (270 kPa)
+        self.assertAlmostEqual(pids.get('010B').parse('1A'), 20.6, places=1)    # A=26 is just over 0.5 V (20 kPa)
+        self.assertEqual(pids.get('010B').parse('00'), 0.0)              # -11.25 is clamped
         self.assertAlmostEqual(pids.get('0111').parse('80'), 50.2, places=1)
         self.assertAlmostEqual(pids.get('0114').parse('90'), 0.72)       # A/200 volts
         self.assertAlmostEqual(pids.get('0114').parse('FF'), 1.275)      # top of its range

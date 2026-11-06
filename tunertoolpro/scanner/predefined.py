@@ -72,6 +72,12 @@ LISTS = (
                    'transmission, cam timing, boost. Rows that need a module this app cannot address (ABS, tyre '
                    'pressure, a separate TCM address) are left out. Unconfirmed on a real car.',
                    'torque_ford.csv', lambda name: True),
+    PredefinedList('gm-report-extras', 'GM: engineering-report extras (unconfirmed)',
+                   'Six readings from the owner\'s E38 / T43 / FPCM engineering report that no other list has: charge '
+                   'air temp (IAT2), a second oil temperature PID, desired line pressure, TCC duty and lock state, and '
+                   'the fuel pump module duty (header 7E3). The report gives the maths; none has been read off the '
+                   'car yet. Readings the app already holds under another meaning are left out.',
+                   'torque_gm_report_extras.csv', lambda name: True),
 )
 
 # Copied from the owner's Torque CSV into data/. The pack appears once that file is there; until then it is not offered.

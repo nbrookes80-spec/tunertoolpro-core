@@ -166,6 +166,45 @@ class FordPackTests(unittest.TestCase):
         self.assertEqual((predefined.count(item), item.modules), (44, False))
 
 
+class ReportExtrasPackTests(unittest.TestCase):
+    """Six readings from the owner's E38/T43/FPCM engineering report that the app had nowhere else. Every one is a
+    candidate: the report gives the equation, nobody has read it off the car. PIDs the app already holds under
+    another meaning (221198, 221199 on the ECM, 221993, 221935, 221934, 22199B) are deliberately not here."""
+
+    LEFT_OUT = ('221198', '221199', '221993', '221935', '221934', '22199B')
+
+    def test_every_row_loads_and_nothing_is_refused(self):
+        found, rejected = pack_pids('torque_gm_report_extras.csv', 'report extras')
+        self.assertEqual(rejected, [])
+        self.assertEqual(set(found), {'221471', '221938', '221939', '22153E', '22193E', '222006'})
+
+    def test_all_unconfirmed_and_on_the_module_the_report_names(self):
+        found, _ = pack_pids('torque_gm_report_extras.csv', 'report extras')
+        for pid in found.values():
+            self.assertFalse(pid.verified, pid.pid)
+        self.assertEqual(found['221471'].header, '7E3')
+        self.assertEqual({found[k].header for k in ('221938', '221939', '22193E')}, {'7E2'})
+        self.assertEqual({found[k].header for k in ('22153E', '222006')}, {'7E0'})
+
+    def test_no_pid_the_app_already_holds_under_another_meaning_is_added(self):
+        text = (DATA / 'torque_gm_report_extras.csv').read_text(encoding='utf-8')
+        for pid in self.LEFT_OUT:
+            self.assertNotIn(pid, text)
+
+    def test_decoded_values_match_the_report_equations(self):
+        found, _ = pack_pids('torque_gm_report_extras.csv', 'report extras')
+        self.assertAlmostEqual(found['222006'].parse('64'), 60.0)         # A - 40
+        self.assertAlmostEqual(found['22153E'].parse('78'), 80.0)         # A - 40
+        self.assertAlmostEqual(found['221471'].parse('FF'), 100.0, places=1)   # A * 0.392157
+        self.assertAlmostEqual(found['221939'].parse('80'), 50.2, places=1)
+        self.assertAlmostEqual(found['221938'].parse('1388'), 50.0)       # 5000 / 100
+        self.assertAlmostEqual(found['22193E'].parse('01'), 1.0)
+
+    def test_the_pack_is_listed_and_counted(self):
+        item = predefined.by_key('gm-report-extras')
+        self.assertEqual((predefined.count(item), item.modules), (6, False))
+
+
 class ProfileTests(unittest.TestCase):
     def tearDown(self):
         pids.use_extras([])
