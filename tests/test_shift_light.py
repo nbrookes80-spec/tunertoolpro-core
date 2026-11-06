@@ -140,5 +140,120 @@ class PrefsTests(unittest.TestCase):
         self.assertEqual((loaded['light_on'], loaded['light_style'], loaded['light_shift']), (False, 'bar', 3000))
 
 
+class BarTests(unittest.TestCase):
+    def test_new_installs_put_a_medium_bar_at_the_top(self):
+        self.assertEqual((shift_light.DEFAULTS['position'], shift_light.DEFAULTS['size']), ('top', 'medium'))
+
+    def test_position_and_size_are_kept_when_known(self):
+        got = shift_light.clean({'position': 'bottom', 'size': 'large'})
+        self.assertEqual((got['position'], got['size']), ('bottom', 'large'))
+
+    def test_unknown_position_and_size_fall_back(self):
+        for bad in ('middle', None, 3, True, ['top']):
+            got = shift_light.clean({'position': bad, 'size': bad})
+            self.assertEqual((got['position'], got['size']), ('top', 'medium'), bad)
+
+    def test_bar_height_for_each_size(self):
+        heights = [shift_light.bar_height(size) for size in ('small', 'medium', 'large')]
+        self.assertEqual(heights, [shift_light.BAR_HEIGHTS[s] for s in ('small', 'medium', 'large')])
+        self.assertLess(heights[0], heights[1])
+        self.assertLess(heights[1], heights[2])
+
+    def test_an_unknown_size_gets_the_medium_height(self):
+        self.assertEqual(shift_light.bar_height('huge'), shift_light.BAR_HEIGHTS['medium'])
+        self.assertEqual(shift_light.bar_height(None), shift_light.BAR_HEIGHTS['medium'])
+
+    def test_a_long_press_swaps_top_and_bottom(self):
+        self.assertEqual(shift_light.other_position('top'), 'bottom')
+        self.assertEqual(shift_light.other_position('bottom'), 'top')
+        self.assertEqual(shift_light.other_position('nonsense'), 'bottom')   # read as the default, top
+
+    def test_the_bar_leaves_the_full_screen_buttons_free_at_the_top(self):
+        self.assertEqual(shift_light.bar_insets('top', True, False, 270), (0, 270))
+
+    def test_mirrored_the_gap_is_on_the_left_so_it_lands_under_the_buttons(self):
+        self.assertEqual(shift_light.bar_insets('top', True, True, 270), (270, 0))
+
+    def test_no_gap_outside_full_screen_or_at_the_bottom(self):
+        self.assertEqual(shift_light.bar_insets('top', False, False, 270), (0, 0))
+        self.assertEqual(shift_light.bar_insets('top', False, True, 270), (0, 0))
+        self.assertEqual(shift_light.bar_insets('bottom', True, False, 270), (0, 0))
+        self.assertEqual(shift_light.bar_insets('bottom', True, True, 270), (0, 0))
+
+
+# Every screen of the Android app. 'scan' polls the adapter itself; the others leave it to the Live reader.
+SCREENS = ('shift', 'dyno', 'live', 'scan', 'link', 'sniff', 'agent', 'settings')
+
+
+class RpmSourceTests(unittest.TestCase):
+    def test_every_screen_is_known(self):
+        self.assertEqual(set(shift_light.SCREENS), set(SCREENS))
+
+    def test_with_the_light_on_every_screen_but_scan_reads_the_live_reader(self):
+        for screen in SCREENS:
+            for scan_rpm in (False, True):
+                want = ('scan' if scan_rpm else 'none') if screen == 'scan' else 'live'
+                self.assertEqual(shift_light.rpm_source(screen, False, True, scan_rpm), want, (screen, scan_rpm))
+
+    def test_nothing_is_read_for_the_light_while_another_part_holds_the_adapter(self):
+        for screen in SCREENS:
+            for scan_rpm in (False, True):
+                self.assertEqual(shift_light.rpm_source(screen, True, True, scan_rpm), 'none', screen)
+
+    def test_with_the_light_off_nothing_is_read_for_it(self):
+        for screen in SCREENS:
+            for holds in (False, True):
+                self.assertEqual(shift_light.rpm_source(screen, holds, False, True), 'none', screen)
+
+    def test_an_unknown_screen_reads_nothing(self):
+        self.assertEqual(shift_light.rpm_source('mystery', False, True, True), 'none')
+
+    def test_the_live_reader_runs_only_where_it_may(self):
+        for screen in SCREENS:
+            for holds in (False, True):
+                for light in (False, True):
+                    want = not holds and screen != 'scan' and (light or screen == 'live')
+                    self.assertEqual(shift_light.runner_runs(screen, holds, light), want, (screen, holds, light))
+
+    def test_the_live_reader_never_runs_alongside_scan_or_a_holder(self):
+        for light in (False, True):
+            self.assertFalse(shift_light.runner_runs('scan', False, light))
+            self.assertFalse(shift_light.runner_runs('mystery', False, light))
+            for screen in SCREENS:
+                self.assertFalse(shift_light.runner_runs(screen, True, light))
+
+    def test_the_bar_says_why_it_has_no_rpm(self):
+        self.assertEqual(shift_light.rpm_note('scan', False, True, False), 'RPM not read on this screen')
+        self.assertEqual(shift_light.rpm_note('mystery', False, True, False), 'RPM not read on this screen')
+        self.assertEqual(shift_light.rpm_note('live', True, True), 'RPM paused: the sniffer has the adapter')
+        for screen in SCREENS:
+            self.assertEqual(shift_light.rpm_note(screen, False, True, True), '', screen)
+            self.assertEqual(shift_light.rpm_note(screen, False, False), '', screen)
+
+
+class BarPrefsTests(unittest.TestCase):
+    def setUp(self):
+        self.path = Path(tempfile.mkdtemp()) / 'prefs.json'
+
+    def test_the_bar_choices_are_saved_choices(self):
+        self.assertEqual((prefs.DEFAULTS['light_position'], prefs.DEFAULTS['light_size']), ('top', 'medium'))
+
+    def test_an_old_prefs_file_without_them_loads_with_the_defaults(self):
+        self.path.write_text(json.dumps({'light_on': True, 'light_shift': 6000}))
+        loaded = prefs.load(self.path)
+        self.assertEqual((loaded['light_on'], loaded['light_shift'], loaded['light_position'], loaded['light_size']),
+                         (True, 6000, 'top', 'medium'))
+
+    def test_the_bar_choices_survive_a_save_and_load(self):
+        prefs.save(self.path, dict(prefs.DEFAULTS, light_position='bottom', light_size='small'))
+        loaded = prefs.load(self.path)
+        self.assertEqual((loaded['light_position'], loaded['light_size']), ('bottom', 'small'))
+
+    def test_damaged_bar_choices_fall_back(self):
+        self.path.write_text(json.dumps({'light_position': 'left', 'light_size': 7}))
+        loaded = prefs.load(self.path)
+        self.assertEqual((loaded['light_position'], loaded['light_size']), ('top', 'medium'))
+
+
 if __name__ == '__main__':
     unittest.main()
