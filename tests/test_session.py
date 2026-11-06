@@ -33,6 +33,60 @@ class AdapterInfoTests(unittest.TestCase):
         self.assertTrue(session.adapter_info()['demo'])
 
 
+class AdapterJobTests(unittest.TestCase):
+    """A one-off adapter job (the speed settings after a connect or from the menu) holds the adapter: the Live
+    reader checks adapter_busy before each round and the job waits for a round already under way."""
+
+    def test_the_adapter_is_busy_only_during_a_job(self):
+        session = Session()
+        self.assertFalse(session.adapter_busy)
+        with session.adapter_job():
+            self.assertTrue(session.adapter_busy)
+        self.assertFalse(session.adapter_busy)
+
+    def test_a_failed_job_still_gives_the_adapter_back(self):
+        session = Session()
+        with self.assertRaises(RuntimeError):
+            with session.adapter_job():
+                raise RuntimeError('the adapter refused')
+        self.assertFalse(session.adapter_busy)
+
+    def test_the_job_waits_for_the_reader_after_marking_the_adapter_busy(self):
+        session, seen = Session(), []
+        session.wait_reader = lambda timeout: seen.append((session.adapter_busy, timeout))
+        with session.adapter_job(timeout=7):
+            seen.append('job')
+        self.assertEqual(seen, [(True, 7), 'job'])
+
+    def test_a_failed_wait_still_gives_the_adapter_back(self):
+        session = Session()
+
+        def broken(_timeout):
+            raise RuntimeError('no reader')
+        session.wait_reader = broken
+        with self.assertRaises(RuntimeError):
+            with session.adapter_job():
+                pass
+        self.assertFalse(session.adapter_busy)
+
+    def test_jobs_on_two_threads_keep_it_busy_until_both_end(self):
+        session = Session()
+        inner_started, release = threading.Event(), threading.Event()
+
+        def other():
+            with session.adapter_job():
+                inner_started.set()
+                release.wait(5)
+        thread = threading.Thread(target=other)
+        with session.adapter_job():
+            thread.start()
+            inner_started.wait(5)
+        self.assertTrue(session.adapter_busy)
+        release.set()
+        thread.join(5)
+        self.assertFalse(session.adapter_busy)
+
+
 class FakeTransport:
     def __init__(self, reply=b'OK\r\r>', fail=None):
         self.reply, self.fail = reply, fail
