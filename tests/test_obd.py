@@ -1,4 +1,5 @@
 import socket
+import tempfile
 import sys
 import threading
 import unittest
@@ -145,7 +146,7 @@ class ElmTests(unittest.TestCase):
         for command in ('ATAT0', 'ATAT1', 'ATAT2', 'ATST32', 'ATSTFF'):
             with self.subTest(command=command):
                 self.assertTrue(obd.is_allowed(command))
-        for command in ('ATAT3', 'ATST', 'ATSTZZ', 'ATDP', 'ATPC', 'ATWS', 'ATSPA'):
+        for command in ('ATAT3', 'ATST', 'ATSTZZ', 'ATDP1', 'ATPC', 'ATWS', 'ATSPA'):
             with self.subTest(command=command):
                 self.assertFalse(obd.is_allowed(command))
 
@@ -208,3 +209,139 @@ class SendTimingTests(unittest.TestCase):
         adapter = self.FakeAdapter()
         self.assertEqual(obd.send_timing(adapter, True, 200), ['ATAT1', 'ATST32'])
         self.assertEqual(adapter.sent, ['ATAT1', 'ATST32'])
+
+
+class AdapterInfoTests(unittest.TestCase):
+    """Task 5: three read-only information commands, the protocol plan, the reconnect backoff and the rate cap."""
+
+    def setUp(self):
+        self.fake = FakeElm327()
+        self.elm = obd.Elm327(obd.WifiTransport('127.0.0.1', self.fake.port, timeout=3))
+        self.elm.open()
+
+    def tearDown(self):
+        self.elm.close()
+        self.fake.close()
+
+    def test_the_three_information_commands_are_allowed(self):
+        for command in ('ATI', 'ATRV', 'ATDP', 'ati', 'AT RV'):
+            with self.subTest(command=command):
+                self.assertTrue(obd.is_allowed(command))
+
+    def test_near_misses_of_the_information_commands_are_still_refused(self):
+        for command in ('ATRV1', 'ATDP1', 'ATI 1', 'ATI1', 'ATIX', 'ATRVX', 'ATDPN', 'ATDPN1', 'AT@1', 'AT@2',
+                        'ATR', 'ATD', 'ATPC', 'ATWS', 'ATRD', 'ATBRD', 'ATCAF0', 'ATTP6', 'ATSH7E0X'):
+            with self.subTest(command=command):
+                self.assertFalse(obd.is_allowed(command))
+
+    def test_everything_refused_before_is_still_refused(self):
+        for command in ('04', '08', '0902', '2201FF', '10', '14', '27', '2E', '2F', '31', '34', 'ATSPA', 'ATSP',
+                        'ATAT3', 'ATST', 'ATSHFFF', 'ATZ1', 'ATE1', '0900', 'ATMA', 'ATCRA7E8'):
+            with self.subTest(command=command):
+                self.assertFalse(obd.is_allowed(command))
+
+    def test_an_information_command_that_is_not_listed_is_refused_before_it_is_sent(self):
+        sent = len(self.fake.received)
+        for command in ('ATRV1', 'ATDP1', 'ATI 1'):
+            with self.assertRaises(obd.UnsafeCommand):
+                self.elm.command(command)
+        self.assertEqual(len(self.fake.received), sent)
+
+    def test_adapter_information_reads_firmware_voltage_and_protocol(self):
+        info = obd.read_adapter_info(self.elm)
+        self.assertEqual(info['firmware'], 'ELM327 v1.5')
+        self.assertEqual(info['adapter_volts'], '12.6V')
+        self.assertEqual(info['protocol'], 'ISO 15765-4 (CAN 11/500)')
+        self.assertEqual(self.fake.received[len(obd.SETUP_COMMANDS):len(obd.SETUP_COMMANDS) + 3], ['ATI', 'ATRV', 'ATDP'])
+        self.assertEqual(info['car_volts'], '12.6 V')
+
+    def test_adapter_information_says_so_when_the_adapter_does_not_answer_a_command(self):
+        self.fake.REPLIES = dict(FakeElm327.REPLIES, ATRV='?')
+        info = obd.read_adapter_info(self.elm)
+        self.assertEqual(info['adapter_volts'], '')
+        self.assertEqual(info['firmware'], 'ELM327 v1.5')
+
+    def test_the_car_battery_is_read_through_the_catalogue_when_the_car_answers(self):
+        from tunertoolpro.scanner import pids
+        self.assertIn('0142', pids.CATALOG)
+        self.assertEqual(obd.read_adapter_info(self.elm)['car_volts'], '12.6 V')
+
+    def test_no_car_battery_answer_leaves_it_empty(self):
+        self.fake.REPLIES = dict(FakeElm327.REPLIES, **{'0142': 'NO DATA'})
+        self.assertEqual(obd.read_adapter_info(self.elm)['car_volts'], '')
+
+    def test_a_full_session_sends_nothing_outside_the_allow_list(self):
+        obd.read_adapter_info(self.elm)
+        for _ in range(3):
+            self.elm.poll(['010C', '010D', '0105', '0111', '221940'], headers={'221940': 'ATSH7E2'[2:]})
+        obd.send_timing(self.elm, True, 200)
+        obd.use_protocol(self.elm, '6')
+        self.assertIn('ATI', self.fake.received)
+        for command in self.fake.received:
+            self.assertTrue(obd.is_allowed(command), command)      # allow_clear is off: 04 would fail here
+
+    def test_the_protocol_plan_tries_the_saved_one_then_automatic(self):
+        self.assertEqual(obd.protocol_plan('6'), ['ATSP6', '0100', 'ATSP0'])
+        self.assertEqual(obd.protocol_plan('9'), ['ATSP9', '0100', 'ATSP0'])
+        self.assertEqual(obd.protocol_plan('0'), ['ATSP0'])
+        for odd in (None, '', 'A', 6, '66', 'junk'):
+            with self.subTest(saved=odd):
+                self.assertEqual(obd.protocol_plan(odd), ['ATSP0'])
+        for command in obd.protocol_plan('7'):
+            self.assertTrue(obd.is_allowed(command))
+
+    def test_a_saved_protocol_that_the_car_answers_stays_selected(self):
+        sent = obd.use_protocol(self.elm, '6')
+        self.assertEqual(sent, ['ATSP6', '0100'])
+        self.assertEqual(self.fake.received[len(obd.SETUP_COMMANDS):], ['ATSP6', '0100'])
+
+    def test_a_saved_protocol_that_the_car_does_not_answer_falls_back_to_automatic(self):
+        self.fake.REPLIES = dict(FakeElm327.REPLIES, **{'0100': 'UNABLE TO CONNECT'})
+        sent = obd.use_protocol(self.elm, '8')
+        self.assertEqual(sent, ['ATSP8', '0100', 'ATSP0'])
+
+    def test_automatic_is_just_sent(self):
+        self.assertEqual(obd.use_protocol(self.elm, '0'), ['ATSP0'])
+
+    def test_every_protocol_choice_can_be_planned(self):
+        for code in obd.PROTOCOLS:
+            self.assertEqual(obd.protocol_plan(code)[0], f'ATSP{code}')
+
+    def test_the_reconnect_backoff_is_one_two_four_eight_sixteen(self):
+        self.assertEqual(obd.backoff_schedule(), (1, 2, 4, 8, 16))
+
+    def test_the_round_delay_follows_the_rate_and_clamps(self):
+        self.assertEqual(obd.DEFAULT_RATE, 4)
+        self.assertAlmostEqual(obd.round_delay(4), 0.25)
+        self.assertAlmostEqual(obd.round_delay(1), 1.0)
+        self.assertAlmostEqual(obd.round_delay(10), 0.1)
+        self.assertAlmostEqual(obd.round_delay(0), 1.0)       # below the range: slowest
+        self.assertAlmostEqual(obd.round_delay(-5), 1.0)
+        self.assertAlmostEqual(obd.round_delay(99), 0.1)      # above: fastest
+        self.assertAlmostEqual(obd.round_delay(2.6), 1 / 3)   # rounds to a whole number
+        for odd in (None, 'fast', True, float('nan'), float('inf')):
+            with self.subTest(rate=odd):
+                self.assertAlmostEqual(obd.round_delay(odd), 0.25)
+
+
+class RatePrefsTests(unittest.TestCase):
+    def setUp(self):
+        self.path = Path(tempfile.mkdtemp()) / 'prefs.json'
+
+    def test_new_choices_have_defaults_and_old_files_still_load(self):
+        from tunertoolpro import prefs
+        self.path.write_text('{"link_kind": "Wi-Fi"}')
+        loaded = prefs.load(self.path)
+        self.assertEqual((loaded['read_rate'], loaded['auto_reconnect']), (4, False))
+
+    def test_the_rate_and_reconnect_choices_are_saved_and_cleaned(self):
+        import json
+        from tunertoolpro import prefs
+        prefs.save(self.path, {'read_rate': 8, 'auto_reconnect': True})
+        loaded = prefs.load(self.path)
+        self.assertEqual((loaded['read_rate'], loaded['auto_reconnect']), (8, True))
+        for bad in (0, 11, -1, 'x', None, True, 2.5, [4]):
+            with self.subTest(rate=bad):
+                self.path.write_text(json.dumps({'read_rate': bad, 'auto_reconnect': 'yes'}))
+                loaded = prefs.load(self.path)
+                self.assertEqual((loaded['read_rate'], loaded['auto_reconnect']), (4, False))
