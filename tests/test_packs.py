@@ -93,6 +93,79 @@ class GenericPackTests(unittest.TestCase):
         self.assertEqual((len(found), rejected), (31, []))
 
 
+def pack_pids(name, source):
+    found, rejected = torque_csv.parse((DATA / name).read_text(encoding='utf-8'), source=source)
+    return {p.pid: p for p in found}, rejected
+
+
+class GenericMorePackTests(unittest.TestCase):
+    """The standard Mode 01 readings of the Torque Pro sensor table that neither the catalogue nor the base generic
+    pack had. Equations are the SAE J1979 ones, worked by hand below."""
+
+    def test_every_row_loads_and_nothing_is_refused(self):
+        found, rejected = pack_pids('torque_generic_obd2_more.csv', 'generic more')
+        self.assertEqual(rejected, [])
+        self.assertEqual(len(found), 14)
+
+    def test_it_adds_nothing_the_catalogue_or_the_base_pack_already_has(self):
+        found, _ = pack_pids('torque_generic_obd2_more.csv', 'generic more')
+        base, _ = generic_pids()
+        self.assertEqual(set(found) & (set(pids.BUILT_IN) | set(base)), set())
+
+    def test_every_row_is_an_unconfirmed_mode_01_read_to_the_broadcast_address(self):
+        found, _ = pack_pids('torque_generic_obd2_more.csv', 'generic more')
+        for pid in found.values():
+            self.assertTrue(pid.pid.startswith('01'), pid.pid)
+            self.assertFalse(pid.verified, pid.pid)
+            self.assertEqual(pid.header, 'Auto', pid.pid)
+
+    def test_decoded_values_match_the_j1979_equations(self):
+        found, _ = pack_pids('torque_generic_obd2_more.csv', 'generic more')
+        self.assertAlmostEqual(found['0126'].parse('8000'), 1.0)             # lambda: 0x8000 * 2 / 65536
+        self.assertAlmostEqual(found['012B'].parse('C000'), 1.5)
+        self.assertAlmostEqual(found['0138'].parse('00008180'), 1.5)         # current: 0x8180 / 256 - 128
+        self.assertAlmostEqual(found['013B'].parse('00008000'), 0.0)
+        self.assertAlmostEqual(found['0161'].parse('7D'), 0.0)               # torque percent: A - 125
+        self.assertAlmostEqual(found['0162'].parse('96'), 25.0)
+        self.assertAlmostEqual(found['0163'].parse('0190'), 400.0)           # reference torque: 0x0190 Nm
+        self.assertAlmostEqual(found['01A6'].parse('00030D40'), 20000.0)     # odometer: 200000 / 10 km
+
+    def test_the_pack_is_listed_and_counted(self):
+        item = predefined.by_key('generic-obd2-more')
+        self.assertEqual((predefined.count(item), item.modules), (14, False))
+
+
+class FordPackTests(unittest.TestCase):
+    """Ford Mode 22 rows from the Torque Pro list. The build tool drops any row that names a module the app cannot
+    address, because the reader would quietly send it to the broadcast address instead."""
+
+    def test_every_row_loads_and_nothing_is_refused(self):
+        found, rejected = pack_pids('torque_ford.csv', 'ford')
+        self.assertEqual(rejected, [])
+        self.assertEqual(len(found), 44)
+
+    def test_every_row_is_an_unconfirmed_mode_01_or_22_read(self):
+        found, _ = pack_pids('torque_ford.csv', 'ford')
+        for pid in found.values():
+            self.assertRegex(pid.pid, r'^(01[0-9A-F]{2}|22[0-9A-F]{4})$')
+            self.assertFalse(pid.verified, pid.pid)
+            self.assertIn(pid.header, ('Auto', '7E0', '7E2', '7E3'), pid.pid)
+
+    def test_no_row_was_sent_to_the_wrong_module(self):
+        text = (DATA / 'torque_ford.csv').read_text(encoding='utf-8')
+        for word in ('"TCM"', '"ABS"', '"726"', '"C410F1"', '"INS"'):
+            self.assertNotIn(word, text)
+
+    def test_decoded_values_match_the_torque_equation(self):
+        found, _ = pack_pids('torque_ford.csv', 'ford')
+        # FICM main power: ((A*256)+B) * (100/256) / 100 volts; 0x0C00 = 3072 -> 12 V
+        self.assertAlmostEqual(found['2209D0'].parse('0C00'), 12.0)
+
+    def test_the_pack_is_listed_and_counted(self):
+        item = predefined.by_key('ford')
+        self.assertEqual((predefined.count(item), item.modules), (44, False))
+
+
 class ProfileTests(unittest.TestCase):
     def tearDown(self):
         pids.use_extras([])

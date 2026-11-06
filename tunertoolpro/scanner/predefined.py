@@ -62,6 +62,16 @@ LISTS = (
                    'torque_generic_obd2.csv', lambda name: True),
     PredefinedList('gm-all', 'GM: everything', 'Every GM reading in the Torque Pro list.',
                    'torque_gm_predefined.csv', lambda name: True),
+    PredefinedList('generic-obd2-more', 'Generic OBD-II: more (all O2 sensors, engine torque, odometer)',
+                   'More standard SAE J1979 Mode 01 readings from the Torque Pro sensor table: wide-range lambda and '
+                   'O2 current for every sensor, driver demand, actual and reference engine torque, and the ECU odometer. '
+                   'Add it beside the Generic OBD-II list.',
+                   'torque_generic_obd2_more.csv', lambda name: True),
+    PredefinedList('ford', 'Ford incl. PowerStroke (from Torque Pro)',
+                   'Ford Mode 22 readings from the Torque Pro list: FICM power, injection and fuel pressure, '
+                   'transmission, cam timing, boost. Rows that need a module this app cannot address (ABS, tyre '
+                   'pressure, a separate TCM address) are left out. Unconfirmed on a real car.',
+                   'torque_ford.csv', lambda name: True),
 )
 
 # Copied from the owner's Torque CSV into data/. The pack appears once that file is there; until then it is not offered.
