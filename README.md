@@ -2,7 +2,10 @@
 
 The GUI-free core of TunerToolPro (GM 4L60E / 6L80E transmission calibration tools): shift and
 converter maths, BC Trans and EFILive file formats, vehicle and engine data, the AI-assistant tools,
-and the CAN bus sniffer logic (frames, sniffer model, ELM327 receive-only monitor, transports).
+the CAN bus sniffer logic (frames, sniffer model, ELM327 receive-only monitor, transports), and the
+scanner: the OBD-II link (`tunertoolpro.link`), the PID catalogue, car profiles, CAN log import and
+replay, data logging and the live stream (`tunertoolpro.scanner`, `live`, `grading`, `prefs`, `recorder`).
+The link is read-only: the Mode 04 code clear is refused unless an app builds it with `allow_clear=True`.
 
 It has no GUI and no required dependencies. `pyserial` (serial adapters) and `pandas` (log import)
 are imported lazily and only when those features are used.
