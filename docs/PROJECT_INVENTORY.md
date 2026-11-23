@@ -13,16 +13,29 @@ model, ELM327 receive-only monitor, transports).
 - **Distribution model:** vendored core. Consumer apps keep their own copy of
   `tunertoolpro/`, pinned to a release tag in `core.lock`. Releases are immutable git
   tags (`v0.1.0`, ...). Apps update via `tools/update_core.py <tag>`.
-- **Default branch:** `main` (2 commits — lagging well behind open feature branches).
-- **Active branches:**
-  - `feature/torque-extract-packs` — 13 commits ahead of `main` (PID packs, 2.7 bar MAP
-    scaling, GM engineering-report pack). Open PR #4.
-  - `units/boost-gauge` — 15 commits ahead (includes torque-extract-packs' commits plus
-    MAP boost gauge reading, Bluetooth close-race fix). Open PR #5.
-  - `feature/gmlan-message-table` — 1 commit ahead (GM-LAN message table for high-speed
-    CAN, linked to car profile by ECM/TCM labels). Draft PR #3.
-- **Tests:** `python -m unittest discover -s tests -t .` (not yet run against the open
-  branches as part of this audit).
+- **Default branch:** `main`, at **v0.4.4** as of 2026-11-23 (PRs #5 and #4 merged).
+- **Release tags** (immutable; all now ancestors of `main`):
+  `v0.1.0`, `v0.1.1`, `v0.4.1`, `v0.4.2`, `v0.4.3`, `v0.4.4`. Note these releases were
+  cut from feature branches *before* those branches reached `main`, so tag existence is
+  not evidence that a change is on `main` — check with
+  `git merge-base --is-ancestor <tag> origin/main`.
+- **Tag style is inconsistent:** `v0.4.1` and `v0.4.2` are lightweight; the rest are
+  annotated. Immutable, so left as-is.
+- **Open branches:**
+  - `feature/gmlan-message-table` — GM-LAN message table for high-speed CAN, linked to
+    car profile by ECM/TCM labels. Draft PR #3, 2 commits ahead of `main` and 18 behind;
+    needs a rebase onto the current `main` before review.
+- **Tests:** `python3 -m unittest discover -s tests -t .` — **722 tests, OK (2 skipped)**
+  on `main` @ `80af4f9` (verified 2026-11-23). Baseline before the merges was 187 tests
+  on `main` @ `4e6fb6c`.
+
+### Pull requests are stacked
+
+PRs in this repo target each other, not always `main`. The v0.4.x series was
+`units/boost-gauge` → `feature/torque-extract-packs` → `main`. **Always read a PR's base
+branch** (`gh pr view <n> --json baseRefName`) before claiming what a merge will do; a
+PR whose head branch contains the newest work is not necessarily the one that lands it
+on `main`.
 
 ## Jarvis (consolidated)
 
